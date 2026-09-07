@@ -210,7 +210,8 @@ export function SearchForm({
             provider: String(event.provider || ""),
             ephemeral: event.ephemeral === true,
           });
-          if (Array.isArray(event.results)) setLeads(event.results);
+          if (Array.isArray(event.results) && event.results.length > 0)
+            setLeads(event.results);
           setStep(5);
           complete = true;
         }
