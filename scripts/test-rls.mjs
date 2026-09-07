@@ -46,6 +46,50 @@ try {
   );
   assert.equal(history.rows[0].count, 1);
   console.log("PASS: alteração de status e histórico são persistidos juntos.");
+  await client.query("select public.crm_save_search($1::jsonb,$2::jsonb)", [
+    JSON.stringify([
+      {
+        id: randomUUID(),
+        company_name: "Teste A",
+        category: "Barbearia",
+        description: "",
+        address: "Rua de Teste, 10",
+        neighborhood: "Centro",
+        city: "Teresópolis",
+        state: "RJ",
+        country: "Brasil",
+        source: "test",
+        source_id: "a",
+        sources: ["test", "website"],
+        phone: "+552122223333",
+        google_maps_url: "https://www.google.com/maps/search/?api=1&query=Teste%20A",
+        confidence: {
+          phone: { value: "+552122223333", confidence: 0.98, source: "website" },
+        },
+        enrichment_confidence: 0.98,
+        last_enriched_at: new Date().toISOString(),
+        analysis: { mode: "unavailable" },
+        score: 50,
+        is_active: true,
+        score_factors: [],
+      },
+    ]),
+    JSON.stringify({
+      id: randomUUID(),
+      niche: "Barbearias",
+      location: "Teresópolis, RJ, Brasil",
+      quantity: 10,
+      status: "completed",
+      provider: "test",
+    }),
+  ]);
+  const deduplicated = await client.query(
+    "select count(*)::int as count,max(phone) as phone,max(status) as status from public.leads where source='test' and source_id='a'",
+  );
+  assert.equal(deduplicated.rows[0].count, 1);
+  assert.equal(deduplicated.rows[0].phone, "+552122223333");
+  assert.equal(deduplicated.rows[0].status, "Interessado");
+  console.log("PASS: duplicata enriquece o lead existente e preserva o pipeline.");
   for (const [name, query, params] of [
     [
       "bloqueia mudança no lead de outro usuário",

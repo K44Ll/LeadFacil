@@ -34,7 +34,33 @@ export interface WebsiteAnalysis {
   has_cta: boolean | null;
   has_form: boolean | null;
   broken_links: number | null;
+  reachable: boolean | null;
+  response_status: number | null;
+  responsive: boolean | null;
+  content_bytes: number | null;
+  page_count: number;
+  has_whatsapp: boolean | null;
+  has_social_links: boolean | null;
+  extremely_simple: boolean | null;
+  redirected_url: string | null;
+  technical_issues: string[];
 }
+export interface EnrichedValue<T> {
+  value: T;
+  confidence: number;
+  source: string;
+}
+export type ConfidenceField =
+  | "phone"
+  | "whatsapp"
+  | "email"
+  | "website"
+  | "instagram"
+  | "facebook"
+  | "linkedin";
+export type LeadConfidence = Partial<
+  Record<ConfidenceField, EnrichedValue<string>>
+>;
 export interface ScoreFactor {
   key: string;
   label: string;
@@ -51,6 +77,7 @@ export interface Lead {
   neighborhood: string;
   city: string;
   state: string;
+  country: string;
   postal_code: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -68,6 +95,12 @@ export interface Lead {
   source: string;
   source_url: string | null;
   source_id: string;
+  google_maps_url: string;
+  sources: string[];
+  confidence: LeadConfidence;
+  enrichment_confidence: number;
+  last_enriched_at: string | null;
+  discovery_distance_m: number | null;
   status: LeadStatus;
   score: number;
   notes: string;
@@ -130,7 +163,10 @@ export interface WorkspaceData {
 }
 export interface SearchInput {
   niche: string;
-  location: string;
+  city: string;
+  state: string;
+  country: string;
+  radius_km: number;
   quantity: number;
   no_website: boolean;
   has_phone: boolean;
@@ -148,8 +184,15 @@ export type SearchPreview = Pick<
   | "city"
   | "state"
   | "phone"
+  | "whatsapp"
+  | "email"
   | "website"
   | "instagram"
+  | "facebook"
+  | "linkedin"
+  | "google_maps_url"
+  | "enrichment_confidence"
+  | "discovery_distance_m"
   | "google_rating"
   | "review_count"
   | "source_url"

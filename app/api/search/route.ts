@@ -4,14 +4,17 @@ import {
   getApiContext,
   saveSearch,
   saveSearchRecord,
+  reuseRecentEnrichment,
 } from "@/lib/data/repository";
 import { searchSchema } from "@/lib/validation";
 import { getLeadProvider } from "@/lib/providers/factory";
 import type { LeadProvider } from "@/lib/providers";
-import { UnconfiguredWebsiteAnalyzer } from "@/lib/analyzers";
 import { calculateOpportunityScore } from "@/lib/scoring";
+import { enrichLeads } from "@/lib/leads/enrichment/enrichment";
+import { deduplicateLeads } from "@/lib/leads/utils/deduplication";
+import type { Lead } from "@/types/crm";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 const running = new Set<string>();
 export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin)
@@ -68,31 +71,95 @@ export async function POST(request: Request) {
         send({ type: "step", step: value });
         activeStep = value;
       }
+      function preview(lead: Lead) {
+        const {
+          company_name,
+          category,
+          address,
+          city,
+          state,
+          phone,
+          whatsapp,
+          email,
+          website,
+          instagram,
+          facebook,
+          linkedin,
+          google_maps_url,
+          google_rating,
+          review_count,
+          source_url,
+          score,
+          enrichment_confidence,
+          discovery_distance_m,
+        } = lead;
+        return {
+          company_name,
+          category,
+          address,
+          city,
+          state,
+          phone,
+          whatsapp,
+          email,
+          website,
+          instagram,
+          facebook,
+          linkedin,
+          google_maps_url,
+          google_rating,
+          review_count,
+          source_url,
+          score,
+          enrichment_confidence,
+          discovery_distance_m,
+        };
+      }
       try {
         console.info("[lead-search] started", {
           id,
           provider: provider.name,
           niche: values.niche,
-          location: values.location,
+          location: [values.city, values.state, values.country].join(", "),
+          radiusKm: values.radius_km,
           quantity: values.quantity,
         });
         await step(0);
-        let leads = await provider.searchBusinesses(
-          values,
-          ctx.id,
-          request.signal,
+        let leads = deduplicateLeads(
+          await provider.searchBusinesses(values, ctx.id, request.signal),
         );
+        send({
+          type: "progress",
+          phase: "discovery",
+          completed: leads.length,
+          total: leads.length,
+        });
+        for (const lead of leads)
+          send({ type: "lead", stage: "discovered", lead: preview(lead) });
         await step(1);
-        leads = leads.map((lead) => ({ ...lead, user_id: ctx.id }));
-        await step(2);
-        const analyzer = new UnconfiguredWebsiteAnalyzer();
-        leads = await Promise.all(
-          leads.map(async (lead) => ({
-            ...lead,
-            analysis: await analyzer.analyze(),
-          })),
+        leads = await reuseRecentEnrichment(
+          leads.map((lead) => ({ ...lead, user_id: ctx.id })),
+          ctx,
         );
-        await step(3);
+        leads = await enrichLeads(leads, {
+          signal: request.signal,
+          concurrency: Math.min(
+            6,
+            Math.max(1, Number(process.env.LEAD_ENRICHMENT_CONCURRENCY) || 3),
+          ),
+          onLead(lead, completed) {
+            const scored = calculateOpportunityScore(lead);
+            lead.score = scored.score;
+            lead.score_factors = scored.factors;
+            send({ type: "lead", stage: "enriched", lead: preview(lead) });
+            send({
+              type: "progress",
+              phase: "enrichment",
+              completed,
+              total: leads.length,
+            });
+          },
+        });
         await step(4);
         leads = leads
           .map((lead) => {
@@ -103,13 +170,24 @@ export async function POST(request: Request) {
               score_factors: result.factors,
             };
           })
-          .filter((l) => l.score >= values.min_score);
+          .filter(
+            (lead) =>
+              lead.score >= values.min_score &&
+              (!values.no_website || !lead.website) &&
+              (!values.has_phone || Boolean(lead.phone)) &&
+              (!values.has_whatsapp || Boolean(lead.whatsapp)) &&
+              (!values.has_instagram || Boolean(lead.instagram)) &&
+              (values.min_rating === 0 ||
+                (lead.google_rating !== null &&
+                  lead.google_rating >= values.min_rating)) &&
+              lead.review_count >= values.min_reviews,
+          );
         await step(5);
         const searchRecord = {
           id,
           user_id: ctx.id,
           niche: values.niche,
-          location: values.location,
+          location: [values.city, values.state, values.country].join(", "),
           quantity: values.quantity,
           result_count: leads.length,
           status: "completed",
@@ -127,37 +205,7 @@ export async function POST(request: Request) {
           matched: leads.length,
           provider: provider.name,
           ephemeral,
-          results: ephemeral
-            ? leads.map(
-                ({
-                  company_name,
-                  category,
-                  address,
-                  city,
-                  state,
-                  phone,
-                  website,
-                  instagram,
-                  google_rating,
-                  review_count,
-                  source_url,
-                  score,
-                }) => ({
-                  company_name,
-                  category,
-                  address,
-                  city,
-                  state,
-                  phone,
-                  website,
-                  instagram,
-                  google_rating,
-                  review_count,
-                  source_url,
-                  score,
-                }),
-              )
-            : undefined,
+          results: leads.map(preview),
         });
         console.info("[lead-search] completed", {
           id,

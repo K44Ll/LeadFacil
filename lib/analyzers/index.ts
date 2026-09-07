@@ -21,6 +21,16 @@ export const websiteAnalysisSchema = z.object({
   has_cta: z.boolean().nullable(),
   has_form: z.boolean().nullable(),
   broken_links: z.number().nonnegative().nullable(),
+  reachable: z.boolean().nullable().default(null),
+  response_status: z.number().int().nullable().default(null),
+  responsive: z.boolean().nullable().default(null),
+  content_bytes: z.number().int().nonnegative().nullable().default(null),
+  page_count: z.number().int().nonnegative().default(0),
+  has_whatsapp: z.boolean().nullable().default(null),
+  has_social_links: z.boolean().nullable().default(null),
+  extremely_simple: z.boolean().nullable().default(null),
+  redirected_url: z.string().nullable().default(null),
+  technical_issues: z.array(z.string()).default([]),
 });
 export interface WebsiteAnalyzer {
   readonly name: string;
@@ -40,6 +50,16 @@ export const unavailableAnalysis: WebsiteAnalysis = {
   has_cta: null,
   has_form: null,
   broken_links: null,
+  reachable: null,
+  response_status: null,
+  responsive: null,
+  content_bytes: null,
+  page_count: 0,
+  has_whatsapp: null,
+  has_social_links: null,
+  extremely_simple: null,
+  redirected_url: null,
+  technical_issues: [],
 };
 export class UnconfiguredWebsiteAnalyzer implements WebsiteAnalyzer {
   readonly name = "Análise não configurada";

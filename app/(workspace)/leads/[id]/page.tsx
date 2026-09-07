@@ -48,13 +48,13 @@ export default async function LeadDetail({
   const contacts = [
     {
       icon: Phone,
-      label: "Telefone",
+      label: `Telefone${lead.confidence.phone ? ` · ${Math.round(lead.confidence.phone.confidence * 100)}%` : ""}`,
       value: lead.phone,
       url: lead.phone ? `tel:${lead.phone.replace(/\D/g, "")}` : null,
     },
     {
       icon: MessageCircle,
-      label: "WhatsApp",
+      label: `WhatsApp${lead.confidence.whatsapp ? ` · ${Math.round(lead.confidence.whatsapp.confidence * 100)}%` : ""}`,
       value: lead.whatsapp ? "Conversar no WhatsApp" : null,
       url: lead.whatsapp
         ? `https://wa.me/${lead.whatsapp.replace(/\D/g, "")}`
@@ -62,13 +62,13 @@ export default async function LeadDetail({
     },
     {
       icon: Mail,
-      label: "Email",
+      label: `Email${lead.confidence.email ? ` · ${Math.round(lead.confidence.email.confidence * 100)}%` : ""}`,
       value: lead.email,
       url: lead.email ? `mailto:${lead.email}` : null,
     },
     {
       icon: Globe,
-      label: "Website",
+      label: `Website${lead.confidence.website ? ` · ${Math.round(lead.confidence.website.confidence * 100)}%` : ""}`,
       value: lead.domain,
       url: safeLink(lead.website),
     },
@@ -89,6 +89,12 @@ export default async function LeadDetail({
       label: "LinkedIn",
       value: lead.linkedin ? "Página da empresa" : null,
       url: safeLink(lead.linkedin),
+    },
+    {
+      icon: MapPin,
+      label: "Google Maps",
+      value: lead.google_maps_url ? "Abrir no Google Maps" : null,
+      url: safeLink(lead.google_maps_url),
     },
   ];
   const analyzed = lead.analysis.mode !== "unavailable";
@@ -185,6 +191,7 @@ export default async function LeadDetail({
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {lead.city}, {lead.state}
+                  {lead.country ? ` · ${lead.country}` : ""}
                   {lead.postal_code && ` · ${lead.postal_code}`}
                 </p>
               </div>

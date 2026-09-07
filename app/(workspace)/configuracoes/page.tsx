@@ -118,6 +118,13 @@ export default async function SettingsPage() {
                     "Busca aberta de empresas locais via Nominatim e Overpass.",
                 },
                 {
+                  name: "Enriquecimento web",
+                  icon: Globe,
+                  connected: isLeadProviderConfigured(),
+                  description:
+                    "Descoberta de sites, contatos e análise técnica de páginas públicas.",
+                },
+                {
                   name: "OpenRouter",
                   icon: Bot,
                   connected: openRouter.configured,

@@ -3,7 +3,12 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Mutation } from "@/lib/validation";
-import type { WorkspaceData, Lead, SearchRecord } from "@/types/crm";
+import type {
+  WorkspaceData,
+  Lead,
+  SearchRecord,
+  LeadConfidence,
+} from "@/types/crm";
 import type { Database, Json } from "@/types/database";
 import { websiteAnalysisSchema, unavailableAnalysis } from "@/lib/analyzers";
 import { STATUSES } from "@/types/crm";
@@ -25,7 +30,9 @@ export async function getApiContext() {
   return { id: user.id, session: user.id, client, user };
 }
 
-type AuthenticatedContext = NonNullable<Awaited<ReturnType<typeof getApiContext>>>;
+type AuthenticatedContext = NonNullable<
+  Awaited<ReturnType<typeof getApiContext>>
+>;
 
 export const getWorkspace = cache(async (): Promise<WorkspaceData> => {
   const ctx = await getContext();
@@ -88,6 +95,7 @@ export const getWorkspace = cache(async (): Promise<WorkspaceData> => {
       analysis: websiteAnalysisSchema
         .catch(unavailableAnalysis)
         .parse(lead.analysis),
+      confidence: lead.confidence as LeadConfidence,
       tag_ids: leadTags
         .filter((t) => t.lead_id === lead.id)
         .map((t) => t.tag_id),
@@ -127,6 +135,46 @@ export async function mutateWorkspace(mutation: Mutation) {
       "Não foi possível salvar. Verifique sua conexão e tente novamente.",
     );
   }
+}
+
+export async function reuseRecentEnrichment(
+  discovered: Lead[],
+  context?: AuthenticatedContext,
+) {
+  if (!discovered.length) return discovered;
+  const ctx = context ?? (await getContext());
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await ctx.client
+    .from("leads")
+    .select("*")
+    .eq("user_id", ctx.id)
+    .eq("source", discovered[0].source)
+    .in(
+      "source_id",
+      discovered.map((lead) => lead.source_id),
+    )
+    .gte("last_enriched_at", cutoff);
+  if (error) {
+    console.warn("Enrichment cache lookup failed:", error.code);
+    return discovered;
+  }
+  const cached = new Map(data.map((row) => [row.source_id, row]));
+  return discovered.map((lead) => {
+    const row = cached.get(lead.source_id);
+    if (!row) return lead;
+    return {
+      ...lead,
+      ...row,
+      status: z.enum(STATUSES).parse(row.status),
+      analysis: websiteAnalysisSchema
+        .catch(unavailableAnalysis)
+        .parse(row.analysis),
+      confidence: row.confidence as LeadConfidence,
+      score_factors: lead.score_factors,
+      tag_ids: lead.tag_ids,
+      list_ids: lead.list_ids,
+    } as Lead;
+  });
 }
 export async function saveSearch(
   leads: Lead[],

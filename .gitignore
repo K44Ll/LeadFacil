@@ -150,3 +150,9 @@ vite.config.ts.timestamp-*
 .vite/
 .vercel
 .env*
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

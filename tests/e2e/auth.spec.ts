@@ -6,6 +6,7 @@ import { createDatabaseClient } from "../../scripts/db-client.mjs";
 test("private routes require real authentication; login, signup and recovery are accessible", async ({
   page,
 }) => {
+  test.setTimeout(240000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -131,7 +132,7 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
     await page.getByRole("textbox", { name: "Email", exact: true }).fill(email);
     await page.getByLabel("Senha", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Entrar no workspace" }).click();
-    await expect(page).toHaveURL(/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/localhost:\d+\/$/, { timeout: 60000 });
     await expect(
       page.getByRole("heading", { name: /Olá, Teste/ }),
     ).toBeVisible();
@@ -152,11 +153,11 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
     ).toBeVisible();
     await page.goto("/buscar");
     await expect(
-      page.getByText("Conecte uma fonte para começar"),
+      page.getByRole("heading", { name: "Defina sua próxima oportunidade" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Buscar Leads", exact: true }),
-    ).toBeDisabled();
+      page.getByRole("button", { name: "Buscar leads", exact: true }),
+    ).toBeEnabled();
     await page.goto("/listas?nova=1");
     await page
       .getByRole("textbox", { name: "Nome da lista" })

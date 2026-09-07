@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { unavailableAnalysis } from "@/lib/analyzers";
 import type { Lead } from "@/types/crm";
+import { googleMapsSearchUrl } from "@/lib/leads/utils/normalize-url";
 
 export const nominatimResponseSchema = z.array(
   z.object({
     boundingbox: z.tuple([z.string(), z.string(), z.string(), z.string()]),
     display_name: z.string(),
+    lat: z.string(),
+    lon: z.string(),
   }),
 );
 
@@ -54,6 +57,7 @@ export function mapOsmElement(
   userId: string,
   niche: string,
   location: string,
+  country = "Brasil",
 ): Lead | null {
   const tags = element.tags;
   const name = clean(tags.name || tags["name:pt"] || tags.brand, 250);
@@ -75,16 +79,18 @@ export function mapOsmElement(
     120,
   ).replaceAll("_", " ");
 
+  const address = [street, number].filter(Boolean).join(", ");
   return {
     id: randomUUID(),
     user_id: userId,
     company_name: name,
     category: category || niche,
     description: clean(tags.description, 2000),
-    address: [street, number].filter(Boolean).join(", "),
+    address,
     neighborhood: clean(tags["addr:suburb"] || tags["addr:district"], 120),
     city,
     state,
+    country: clean(tags["addr:country"], 80) || country,
     postal_code: clean(tags["addr:postcode"], 30) || null,
     latitude,
     longitude,
@@ -105,6 +111,17 @@ export function mapOsmElement(
     source: "OpenStreetMap",
     source_url: `https://www.openstreetmap.org/${element.type}/${element.id}`,
     source_id: `${element.type}/${element.id}`,
+    google_maps_url: googleMapsSearchUrl({
+      name,
+      address: [address, city, state].filter(Boolean).join(", "),
+      latitude,
+      longitude,
+    }),
+    sources: ["OpenStreetMap"],
+    confidence: {},
+    enrichment_confidence: 0.9,
+    last_enriched_at: null,
+    discovery_distance_m: null,
     status: "Novo",
     score: 0,
     notes: "",

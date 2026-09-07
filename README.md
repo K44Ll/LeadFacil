@@ -72,7 +72,7 @@ OPENROUTER_MODEL=provedor/modelo
 
 A integração usa `POST https://openrouter.ai/api/v1/chat/completions`. A chave não possui prefixo `NEXT_PUBLIC_`, não entra no bundle do navegador e nunca é retornada pela API. O Route Handler exige uma sessão Supabase válida e consulta o lead com RLS antes de enviar os dados ao modelo. Sem as duas variáveis, o controle permanece desabilitado e a tela de Configurações mostra o OpenRouter como não configurado.
 
-## Fontes de empresas e análise técnica
+## Descoberta e enriquecimento de empresas
 
 O provider gratuito usa Nominatim para localizar a região e Overpass API para buscar empresas no OpenStreetMap. Não exige chave nem cartão. Configure apenas um email técnico de contato no **.env**, usado para identificar corretamente o aplicativo perante os serviços públicos:
 
@@ -85,6 +85,18 @@ A busca utiliza categorias conhecidas do OpenStreetMap e uma busca por nome para
 `WebsiteAnalyzer` define o contrato de análise. O analisador não configurado retorna **Não analisado**, sem inventar testes, datas ou falhas. Os critérios técnicos não somam pontos sem observações reais. Configure uma implementação real antes de habilitar a busca; só adicionar uma variável de ambiente não basta.
 
 O score é determinístico, fica entre 0 e 100 e é explicado por fatores em `lib/scoring`. O peso de cada critério está centralizado em `SCORE_WEIGHTS`.
+
+A busca aceita categoria, cidade, estado, país, raio de 1 a 50 km e até 100 resultados. Depois da descoberta, uma fila server-side conservadora tenta localizar o site oficial com busca web pública, exige confiança mínima de 0,70 e visita no máximo cinco páginas públicas do mesmo estabelecimento. Telefone, WhatsApp, email e redes sociais são normalizados e guardados com fonte e confiança.
+
+O scraper bloqueia protocolos não HTTP, localhost, redes privadas, endpoints de metadata, respostas grandes e cadeias longas de redirect. Cada lead possui timeout e falha isolada; não há bypass de CAPTCHA, Cloudflare, login ou bloqueios anti-bot. Resultados enriquecidos são reutilizados por sete dias e duplicatas atualizam o lead existente sem alterar status, notas, listas ou tags.
+
+Opcionalmente ajuste a concorrência da fila no backend (1 a 6, padrão 3):
+
+```dotenv
+LEAD_ENRICHMENT_CONCURRENCY=3
+```
+
+Essa variável e todas as chamadas de descoberta/scraping ficam no servidor. Nenhuma chave secreta usa o prefixo `NEXT_PUBLIC_`.
 
 ## Verificação
 

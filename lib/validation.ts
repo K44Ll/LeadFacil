@@ -6,7 +6,10 @@ export const searchSchema = z.object({
     .trim()
     .min(2, "Informe um nicho com pelo menos 2 caracteres.")
     .max(80),
-  location: z.string().trim().min(2, "Informe a cidade e o estado.").max(120),
+  city: z.string().trim().min(2, "Informe a cidade.").max(100),
+  state: z.string().trim().min(2, "Informe o estado.").max(80),
+  country: z.string().trim().min(2).max(80).default("Brasil"),
+  radius_km: z.coerce.number().int().min(1).max(50).default(10),
   quantity: z.coerce
     .number()
     .refine((n) => [10, 25, 50, 100].includes(n), "Quantidade inválida."),

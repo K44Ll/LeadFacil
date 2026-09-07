@@ -8,7 +8,10 @@ async function main() {
   const leads = await provider.searchBusinesses(
     {
       niche: "Barbearias",
-      location: "Teresópolis, RJ",
+      city: "Teresópolis",
+      state: "RJ",
+      country: "Brasil",
+      radius_km: 10,
       quantity: 10,
       no_website: false,
       has_phone: false,

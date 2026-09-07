@@ -7,6 +7,9 @@ import {
   mapOsmElement,
   overpassResponseSchema,
 } from "../lib/providers/openstreetmap-schema";
+import { extractContacts } from "../lib/leads/enrichment/contact-extractor";
+import { normalizeBrazilianPhone } from "../lib/leads/utils/normalize-phone";
+import { deduplicateLeads } from "../lib/leads/utils/deduplication";
 const empty = {
   website: null,
   review_count: 0,
@@ -14,6 +17,7 @@ const empty = {
   phone: null,
   whatsapp: null,
   instagram: null,
+  email: null,
   is_active: false,
 };
 test("score is deterministic and factors exactly explain the result", () => {
@@ -29,7 +33,7 @@ test("score is deterministic and factors exactly explain the result", () => {
   const a = calculateOpportunityScore(input),
     b = calculateOpportunityScore(input);
   assert.deepEqual(a, b);
-  assert.equal(a.score, 75);
+  assert.equal(a.score, 93);
   assert.equal(
     a.factors.reduce((n, f) => n + f.points, 0),
     a.score,
@@ -38,19 +42,19 @@ test("score is deterministic and factors exactly explain the result", () => {
 test("review thresholds apply only above 100 and 300", () => {
   assert.equal(
     calculateOpportunityScore({ ...empty, review_count: 100 }).score,
-    25,
+    40,
   );
   assert.equal(
     calculateOpportunityScore({ ...empty, review_count: 101 }).score,
-    35,
+    45,
   );
   assert.equal(
     calculateOpportunityScore({ ...empty, review_count: 300 }).score,
-    35,
+    45,
   );
   assert.equal(
     calculateOpportunityScore({ ...empty, review_count: 301 }).score,
-    45,
+    50,
   );
 });
 test("unavailable analysis never contributes technical points", () => {
@@ -79,7 +83,7 @@ test("malformed and unbounded severity cannot produce invalid scores", () => {
       seo_issues: NaN,
     },
   });
-  assert.equal(result.score, 20);
+  assert.equal(result.score, 30);
   assert.ok(result.score >= 0 && result.score <= 100);
 });
 test("website absent does not add fictional SEO or mobile findings", () => {
@@ -93,7 +97,35 @@ test("website absent does not add fictional SEO or mobile findings", () => {
       seo_issues: 1,
     },
   });
-  assert.equal(result.score, 25);
+  assert.equal(result.score, 40);
+});
+
+test("extracts and normalizes public phone, WhatsApp, email and social profiles", () => {
+  const result = extractContacts(
+    `
+    <html><body>
+      <a href="tel:(21) 2222-3333">Telefone</a>
+      <a href="https://wa.me/5521999998888">WhatsApp</a>
+      <a href="mailto:contato@barbearia.com.br">E-mail</a>
+      <a href="https://instagram.com/barbearia.teste">Instagram</a>
+      example@example.com noreply@barbearia.com.br
+    </body></html>
+  `,
+    "https://barbearia.com.br",
+  );
+  assert.equal(result.phone?.value, "+552122223333");
+  assert.equal(result.whatsapp?.value, "+5521999998888");
+  assert.equal(result.email?.value, "contato@barbearia.com.br");
+  assert.equal(
+    result.socials.instagram?.value,
+    "https://instagram.com/barbearia.teste",
+  );
+  assert.ok((result.socials.instagram?.confidence ?? 0) >= 0.9);
+});
+
+test("Brazilian phone normalization rejects malformed numbers", () => {
+  assert.equal(normalizeBrazilianPhone("(21) 99999-8888"), "+5521999998888");
+  assert.equal(normalizeBrazilianPhone("123"), null);
 });
 test("validation rejects oversized selections, invalid status and malformed search", () => {
   assert.equal(
@@ -157,4 +189,11 @@ test("OpenStreetMap mapping keeps only explicit contact and location data", () =
   assert.equal(lead.website, null);
   assert.equal(lead.whatsapp, null);
   assert.equal(lead.email, null);
+  const duplicate = {
+    ...lead,
+    id: "00000000-0000-4000-8000-000000000002",
+    source_id: "way/456",
+    phone: "+552122223333",
+  };
+  assert.equal(deduplicateLeads([lead, duplicate]).length, 1);
 });
