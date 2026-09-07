@@ -1,0 +1,11 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// O schema public ainda não tem tabelas da aplicação.
+// Adicione os models aqui ou importe tabelas existentes com npm run db:pull.
