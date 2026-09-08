@@ -28,7 +28,9 @@ import {
   LeadStatusControl,
   InteractionForm,
 } from "@/components/leads/lead-actions";
-import { AiOutreach } from "@/components/leads/ai-outreach";
+import { LeadApproachGenerator } from "@/components/leads/approach/lead-approach-generator";
+import { DeleteLeadButton } from "@/components/leads/delete-leads-dialog";
+import { createOutreachLeadContext } from "@/lib/ai/lead-context";
 import { getOpenRouterStatus } from "@/lib/ai/openrouter";
 export const metadata = { title: "Detalhes do lead" };
 export default async function LeadDetail({
@@ -40,6 +42,7 @@ export default async function LeadDetail({
   const lead = data.leads.find((l) => l.id === id);
   if (!lead) notFound();
   const ai = getOpenRouterStatus();
+  const outreachLead = createOutreachLeadContext(lead);
   const timeline = data.interactions
     .filter((i) => i.lead_id === id)
     .sort((a, b) => b.happened_at.localeCompare(a.happened_at));
@@ -171,8 +174,14 @@ export default async function LeadDetail({
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
+          <LeadApproachGenerator
+            leadId={lead.id}
+            lead={outreachLead}
+            configured={ai.configured}
+          />
           <LeadStatusControl lead={lead} />
           <InteractionForm leadId={lead.id} />
+          <DeleteLeadButton lead={lead} />
         </div>
       </div>
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_340px]">
@@ -273,7 +282,6 @@ export default async function LeadDetail({
               </div>
             </div>
           </section>
-          <AiOutreach leadId={lead.id} configured={ai.configured} />
           <LeadNotes key={lead.notes} lead={lead} />
           <section className="panel p-5">
             <h2 className="mb-5 text-sm font-medium">Histórico comercial</h2>

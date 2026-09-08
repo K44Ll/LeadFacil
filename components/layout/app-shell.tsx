@@ -223,6 +223,7 @@ export function AppShell({
   return (
     <div
       className={cn(
+        "min-w-0 overflow-x-clip",
         collapsed === "collapsed" && "sidebar-collapsed",
         density === "compact" && "density-compact",
       )}

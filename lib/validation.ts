@@ -23,6 +23,10 @@ export const searchSchema = z.object({
 });
 export const mutationSchema = z.discriminatedUnion("type", [
   z.object({
+    type: z.literal("delete_leads"),
+    ids: z.array(z.uuid()).min(1).max(100),
+  }),
+  z.object({
     type: z.literal("status"),
     ids: z.array(z.uuid()).min(1).max(100),
     status: z.enum(STATUSES),

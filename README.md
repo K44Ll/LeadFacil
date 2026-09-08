@@ -61,16 +61,19 @@ A infraestrutura Prisma preexistente foi preservada para ferramentas administrat
 - Temas Light, Dark, OLED, Neon, Tokyo Night e Miami Vibe. Preferências de tema, densidade e sidebar persistidas no navegador.
 - Login, cadastro, confirmação de email, recuperação de senha e logout reais.
 
-## OpenRouter
+## Chegador na Empresa e OpenRouter
 
-O assistente de abordagem nos detalhes do lead usa o OpenRouter pelo backend. Configure a chave e o slug completo do modelo exclusivamente no **.env**:
+Nos detalhes de cada lead, o **Chegador na Empresa** combina os dados disponíveis com o serviço, personalidade, tom, tamanho e contexto opcional escolhidos pelo usuário. A mensagem pode ser copiada, editada e regenerada com outro gancho. Serviço e preferências ficam salvos somente no navegador atual, usando o mesmo mecanismo leve de preferências de aparência.
+
+A geração usa o OpenRouter exclusivamente pelo backend. Configure a chave no **.env**:
 
 ```dotenv
 OPENROUTER_API_KEY=SUA_CHAVE
+# Opcional; padrão: openai/gpt-4o-mini
 OPENROUTER_MODEL=provedor/modelo
 ```
 
-A integração usa `POST https://openrouter.ai/api/v1/chat/completions`. A chave não possui prefixo `NEXT_PUBLIC_`, não entra no bundle do navegador e nunca é retornada pela API. O Route Handler exige uma sessão Supabase válida e consulta o lead com RLS antes de enviar os dados ao modelo. Sem as duas variáveis, o controle permanece desabilitado e a tela de Configurações mostra o OpenRouter como não configurado.
+A integração usa `POST https://openrouter.ai/api/v1/chat/completions`. A chave não possui prefixo `NEXT_PUBLIC_`, não entra no bundle do navegador e nunca é retornada pela API. O Route Handler exige uma sessão Supabase válida, valida o payload com Zod e consulta o lead com RLS antes de enviar apenas um conjunto reduzido de fatos ao modelo. A chamada tem timeout, saída curta e limite simples de seis gerações por minuto por usuário em cada instância do servidor. Sem `OPENROUTER_API_KEY`, a geração permanece desabilitada e a tela de Configurações mostra o OpenRouter como não configurado. Para trocar o modelo, altere apenas `OPENROUTER_MODEL`.
 
 ## Descoberta e enriquecimento de empresas
 

@@ -1,137 +1,133 @@
 import "server-only";
 
-import { openRouterResponseSchema, type OutreachChannel } from "./schemas";
+import type { OutreachLeadContext } from "./lead-context";
+import { getOpenRouterErrorForStatus, OpenRouterError } from "./errors";
+import { buildOutreachPrompt, OUTREACH_SYSTEM_PROMPT } from "./prompt";
+import { extractOpenRouterMessage, InvalidAiResponseError } from "./response";
+import type { OutreachRequest } from "./schemas";
 
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+export const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
+const OPENROUTER_TIMEOUT_MS = 25_000;
+const MAX_OUTPUT_TOKENS = 240;
 
-type LeadContext = {
-  company_name: string;
-  category: string;
-  description: string;
-  city: string;
-  state: string;
-  phone: string | null;
-  whatsapp: string | null;
-  email: string | null;
-  website: string | null;
-  instagram: string | null;
-  google_rating: number | null;
-  review_count: number;
-  score: number;
-  notes: string;
-};
-
-export class OpenRouterError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "OpenRouterError";
-  }
-}
+export { OpenRouterError } from "./errors";
 
 export function getOpenRouterStatus() {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  const model = process.env.OPENROUTER_MODEL?.trim();
-  return { configured: Boolean(apiKey && model), model: model || null };
+  return {
+    configured: Boolean(apiKey),
+    model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
+  };
 }
 
 function getConfig() {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  const model = process.env.OPENROUTER_MODEL?.trim();
-  if (!apiKey || !model) {
+  if (!apiKey) {
     throw new OpenRouterError(
-      "Configure OPENROUTER_API_KEY e OPENROUTER_MODEL no arquivo .env.",
+      "A geração com IA ainda não foi configurada.",
       503,
+      "missing_api_key",
     );
   }
-  return { apiKey, model };
-}
-
-function buildPrompt(lead: LeadContext, channel: OutreachChannel) {
-  const channelRules = {
-    whatsapp:
-      "Escreva uma mensagem de WhatsApp curta, natural e fácil de responder.",
-    email:
-      "Escreva um email com uma linha de assunto e um corpo objetivo, separados por uma linha em branco.",
-    ligacao:
-      "Escreva um roteiro curto de ligação, com abertura, pergunta de diagnóstico e próximo passo.",
-  } satisfies Record<OutreachChannel, string>;
-
-  return `${channelRules[channel]}
-
-Use exclusivamente os dados fornecidos abaixo. Não invente problemas, auditorias, resultados, pessoas, números ou informações sobre a empresa. Não diga que visitou ou analisou o website. Se um dado estiver ausente, simplesmente não o mencione. O objetivo é iniciar uma conversa consultiva sobre criação de sites, redesign, landing pages, SEO, performance ou desenvolvimento web. Escreva em português do Brasil, sem jargões, sem tom agressivo e com no máximo 170 palavras.
-
-Dados do lead:
-${JSON.stringify(lead, null, 2)}`;
+  return {
+    apiKey,
+    model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
+  };
 }
 
 export async function generateOutreach(
-  lead: LeadContext,
-  channel: OutreachChannel,
+  lead: OutreachLeadContext,
+  request: OutreachRequest,
 ) {
   const { apiKey, model } = getConfig();
-  let response: Response;
+  const userPrompt = buildOutreachPrompt({ ...request, lead });
 
-  try {
-    response = await fetch(OPENROUTER_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer":
-          process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000",
-        "X-OpenRouter-Title": "LeadFácil",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Você ajuda profissionais de serviços digitais a criar abordagens comerciais factuais, respeitosas e personalizadas.",
-          },
-          { role: "user", content: buildPrompt(lead, channel) },
-        ],
-        temperature: 0.4,
-        max_tokens: 500,
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError") {
-      throw new OpenRouterError("A IA demorou demais para responder.", 504);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const requestPromise = (async () => {
+      const response = await fetch(OPENROUTER_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer":
+            process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000",
+          "X-OpenRouter-Title": "LeadFácil",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: OUTREACH_SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          temperature:
+            (request.previous_message ? 0.78 : 0.62) + attempt * 0.04,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          reasoning: { effort: "none", exclude: true },
+        }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      return { response, payload };
+    })();
+
+    let response: Response;
+    let payload: unknown;
+    try {
+      ({ response, payload } = await Promise.race([
+        requestPromise,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(
+              new OpenRouterError(
+                "A IA demorou para responder. Tente novamente.",
+                504,
+                "timeout",
+              ),
+            );
+          }, OPENROUTER_TIMEOUT_MS);
+        }),
+      ]));
+    } catch (error) {
+      if (error instanceof OpenRouterError) throw error;
+      const timedOut =
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      throw new OpenRouterError(
+        timedOut
+          ? "A IA demorou para responder. Tente novamente."
+          : "Não foi possível conectar à IA agora. Tente novamente.",
+        timedOut ? 504 : 502,
+        timedOut ? "timeout" : "network_error",
+      );
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
-    throw new OpenRouterError("Não foi possível acessar o OpenRouter.", 502);
+
+    if (!response.ok) throw getOpenRouterErrorForStatus(response.status);
+
+    try {
+      const result = extractOpenRouterMessage(payload);
+      return { text: result.text, model: result.model || model };
+    } catch (error) {
+      if (!(error instanceof InvalidAiResponseError)) throw error;
+      if (attempt === 0) {
+        console.warn("OpenRouter returned an invalid response; retrying", {
+          model,
+        });
+        continue;
+      }
+      throw new OpenRouterError(error.message, 502, "invalid_response");
+    }
   }
 
-  if (!response.ok) {
-    const messages: Record<number, string> = {
-      401: "A chave do OpenRouter foi recusada.",
-      402: "A conta do OpenRouter está sem créditos disponíveis.",
-      429: "O limite de requisições do OpenRouter foi atingido.",
-    };
-    throw new OpenRouterError(
-      messages[response.status] ||
-        "O OpenRouter não conseguiu gerar a abordagem.",
-      response.status >= 400 && response.status < 600 ? response.status : 502,
-    );
-  }
-
-  const parsed = openRouterResponseSchema.safeParse(
-    await response.json().catch(() => null),
+  throw new OpenRouterError(
+    "Não foi possível gerar a abordagem agora. Tente novamente.",
+    502,
+    "invalid_response",
   );
-  if (!parsed.success) {
-    throw new OpenRouterError(
-      "O OpenRouter retornou uma resposta inválida.",
-      502,
-    );
-  }
-
-  return {
-    text: parsed.data.choices[0].message.content.trim(),
-    model: parsed.data.model || model,
-  };
 }

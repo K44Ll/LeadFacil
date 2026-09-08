@@ -128,7 +128,7 @@ export default async function SettingsPage() {
                   name: "OpenRouter",
                   icon: Bot,
                   connected: openRouter.configured,
-                  description: openRouter.model
+                  description: openRouter.configured
                     ? `Abordagens comerciais com ${openRouter.model}.`
                     : "IA para criar abordagens comerciais personalizadas.",
                 },

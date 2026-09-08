@@ -158,6 +158,120 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
     await expect(
       page.getByRole("button", { name: "Buscar leads", exact: true }),
     ).toBeEnabled();
+    const leadId = randomUUID();
+    await db.query(
+      "insert into public.leads(id,user_id,company_name,category,description,city,state,phone,whatsapp,website,domain,instagram,google_rating,review_count,source,source_id,notes) values($1,$2,'Academia StrongFit','Academia','Academia local com presença digital ativa.','Teresópolis','RJ','+552122223333','+5521999998888','https://strongfit.example','strongfit.example','https://instagram.com/strongfit',4.8,127,'e2e','strongfit','Contato interessado em crescimento digital.')",
+      [leadId, userId],
+    );
+    let generatedRequests = 0;
+    let outreachPayload: Record<string, unknown> | undefined;
+    await page.route("**/api/ai/outreach", async (route) => {
+      generatedRequests += 1;
+      outreachPayload = route.request().postDataJSON() as Record<
+        string,
+        unknown
+      >;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          text:
+            generatedRequests === 1
+              ? "Oi! Vi que a StrongFit tem uma presença digital ativa. Trabalho com sites para academias e posso te mostrar uma ideia rápida para facilitar novos agendamentos."
+              : "A StrongFit já conversa com bastante gente online. Posso montar uma sugestão curta de site para transformar esse interesse em agendamentos?",
+          model: "modelo-de-teste",
+        }),
+      });
+    });
+    await page.goto(`/leads/${leadId}`);
+    await page
+      .getByRole("button", { name: "Gerar abordagem com IA" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Chegador na Empresa" }),
+    ).toBeVisible();
+    await expect(page.getByText("Academia StrongFit").first()).toBeVisible();
+    await expect(page.getByText("strongfit.example").first()).toBeVisible();
+    await page
+      .getByRole("textbox", { name: "Serviço que você oferece" })
+      .fill("criação de sites para academias");
+    await page.getByRole("radio", { name: /Especialista/ }).click();
+    await page.getByRole("radio", { name: /Amigável/ }).click();
+    await page.getByRole("button", { name: /Adicionar contexto/ }).click();
+    await page
+      .getByRole("textbox", { name: "Contexto adicional para a abordagem" })
+      .fill("Quero oferecer um fluxo simples de agendamento online.");
+    await page.getByRole("button", { name: "Gerar agora" }).click();
+    await expect(
+      page.getByRole("heading", {
+        name: "Criando uma abordagem para Academia StrongFit...",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Sua abordagem está pronta")).toBeVisible();
+    const outreachAccessibility = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    expect(
+      outreachAccessibility.violations.filter(
+        (violation) =>
+          violation.impact === "critical" || violation.impact === "serious",
+      ),
+      JSON.stringify(outreachAccessibility.violations),
+    ).toEqual([]);
+    await page.screenshot({
+      path: "artifacts/verification/chegador-desktop.png",
+      fullPage: true,
+    });
+    expect(outreachPayload).toMatchObject({
+      lead_id: leadId,
+      offered_service: "criação de sites para academias",
+      personality: "specialist",
+      tone: "friendly",
+      length: "short",
+    });
+    await page.getByRole("button", { name: "Editar" }).click();
+    await page
+      .getByRole("textbox", { name: "Editar abordagem gerada" })
+      .fill("Mensagem ajustada manualmente.");
+    await page.getByRole("button", { name: "Concluir" }).click();
+    await expect(page.getByText("Mensagem ajustada manualmente.")).toBeVisible();
+    await page.getByRole("button", { name: "Gerar novamente" }).click();
+    await expect(
+      page.getByText("A StrongFit já conversa com bastante gente online."),
+    ).toBeVisible();
+    expect(outreachPayload).toMatchObject({
+      previous_message: "Mensagem ajustada manualmente.",
+    });
+    await page.setViewportSize({ width: 375, height: 800 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: "artifacts/verification/chegador-mobile.png",
+      fullPage: true,
+    });
+    await page.keyboard.press("Escape");
+    await page.unroute("**/api/ai/outreach");
+    expect(
+      (
+        await page.request.post("/api/ai/outreach", {
+          data: { ...validOutreachPayload(leadId), tone: "aggressive" },
+        })
+      ).status(),
+    ).toBe(400);
+    await page.getByRole("button", { name: "Remover lead" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Remover “Academia StrongFit”?" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Excluir lead" }).click();
+    await expect(page).toHaveURL(/\/leads$/);
+    await expect(
+      page.getByRole("heading", { name: "Você ainda não possui leads." }),
+    ).toBeVisible();
     await page.goto("/listas?nova=1");
     await page
       .getByRole("textbox", { name: "Nome da lista" })
@@ -255,3 +369,14 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
     await db.end();
   }
 });
+
+function validOutreachPayload(leadId: string) {
+  return {
+    lead_id: leadId,
+    offered_service: "criação de sites",
+    user_context: "",
+    personality: "partner",
+    tone: "friendly",
+    length: "short",
+  };
+}

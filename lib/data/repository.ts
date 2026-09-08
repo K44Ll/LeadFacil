@@ -126,6 +126,21 @@ export const getWorkspace = cache(async (): Promise<WorkspaceData> => {
 
 export async function mutateWorkspace(mutation: Mutation) {
   const ctx = await getContext();
+  if (mutation.type === "delete_leads") {
+    const { data, error } = await ctx.client
+      .from("leads")
+      .delete()
+      .eq("user_id", ctx.id)
+      .in("id", mutation.ids)
+      .select("id");
+    if (error || data.length !== mutation.ids.length) {
+      console.error("Lead deletion failed:", error?.code || "row_mismatch");
+      throw new Error(
+        "Não foi possível remover os leads selecionados. Tente novamente.",
+      );
+    }
+    return;
+  }
   const { error } = await ctx.client.rpc("crm_mutate", { payload: mutation });
   if (error) {
     console.error("CRM mutation failed:", error.code);

@@ -17,12 +17,14 @@ import {
   Phone,
   Search,
   Star,
+  Trash2,
   X,
 } from "lucide-react";
 import { useMutation } from "@/hooks/use-mutation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DeleteLeadsDialog } from "@/components/leads/delete-leads-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,6 +81,7 @@ export function LeadsTable({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selected, setSelected] = useState<string[]>([]);
+  const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [filters, setFilters] = useState(false);
   const { pending, mutate } = useMutation();
   const filtered = leads
@@ -113,6 +116,7 @@ export function LeadsTable({
   const activeSelected = selected.filter((id) =>
     filtered.some((l) => l.id === id),
   );
+  const deleteTargets = leads.filter((lead) => deleteIds.includes(lead.id));
   function toggle(id: string) {
     setSelected((ids) =>
       ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id],
@@ -372,6 +376,14 @@ export function LeadsTable({
             </Button>
           )}
           <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() => setDeleteIds(activeSelected)}
+          >
+            <Trash2 />
+            Remover
+          </Button>
+          <Button
             variant="ghost"
             size="icon"
             className="ml-auto"
@@ -538,6 +550,7 @@ export function LeadsTable({
                       <LeadMenu
                         lead={lead}
                         pending={pending}
+                        onDelete={() => setDeleteIds([lead.id])}
                         setStatus={(status) =>
                           mutate({ type: "status", ids: [lead.id], status })
                         }
@@ -576,6 +589,7 @@ export function LeadsTable({
                   <LeadMenu
                     lead={lead}
                     pending={pending}
+                    onDelete={() => setDeleteIds([lead.id])}
                     setStatus={(status) =>
                       mutate({ type: "status", ids: [lead.id], status })
                     }
@@ -632,16 +646,29 @@ export function LeadsTable({
           </Button>
         </div>
       </div>
+      <DeleteLeadsDialog
+        leads={deleteTargets}
+        open={deleteTargets.length > 0}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDeleteIds([]);
+        }}
+        onDeleted={() => {
+          setSelected((ids) => ids.filter((id) => !deleteIds.includes(id)));
+          setDeleteIds([]);
+        }}
+      />
     </section>
   );
 }
 function LeadMenu({
   lead,
   pending,
+  onDelete,
   setStatus,
 }: {
   lead: Lead;
   pending: boolean;
+  onDelete: () => void;
   setStatus: (status: LeadStatus) => void;
 }) {
   return (
@@ -673,6 +700,14 @@ function LeadMenu({
             )}
           </DropdownMenuItem>
         ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={onDelete}
+        >
+          <Trash2 />
+          Remover lead
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

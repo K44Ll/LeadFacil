@@ -13,7 +13,15 @@ export async function updateWorkspace(input: unknown): Promise<ActionResult> {
   try {
     await mutateWorkspace(parsed.data);
     revalidatePath("/", "layout");
-    return { ok: true, message: "Alterações salvas." };
+    return {
+      ok: true,
+      message:
+        parsed.data.type === "delete_leads"
+          ? parsed.data.ids.length === 1
+            ? "Lead removido."
+            : `${parsed.data.ids.length} leads removidos.`
+          : "Alterações salvas.",
+    };
   } catch (error) {
     return {
       ok: false,

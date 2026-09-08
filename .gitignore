@@ -150,6 +150,7 @@ vite.config.ts.timestamp-*
 .vite/
 .vercel
 .env*
+!.env.example
 
 # Playwright
 /playwright-report/
