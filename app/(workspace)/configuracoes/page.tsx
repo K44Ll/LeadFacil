@@ -1,5 +1,4 @@
 import {
-  Bot,
   Database,
   Globe,
   Mail,
@@ -10,10 +9,10 @@ import {
 import { getWorkspace } from "@/lib/data/repository";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { SCORE_WEIGHTS } from "@/lib/scoring";
-import { getOpenRouterStatus } from "@/lib/ai/openrouter";
 import { isLeadProviderConfigured } from "@/lib/providers/factory";
 import { PageHeader } from "@/components/shared";
 import {
+  AIProviderSettings,
   AppearanceSettings,
   ProfileSettings,
   TagsSettings,
@@ -21,7 +20,6 @@ import {
 export const metadata = { title: "Configurações" };
 export default async function SettingsPage() {
   const data = await getWorkspace();
-  const openRouter = getOpenRouterStatus();
   return (
     <>
       <PageHeader
@@ -39,6 +37,7 @@ export default async function SettingsPage() {
             { label: "Aparência", href: "aparencia" },
             { label: "Lead scoring", href: "scoring" },
             { label: "Tags", href: "tags" },
+            { label: "Inteligência artificial", href: "ia" },
             { label: "Integrações", href: "integracoes" },
           ].map((s, i) => (
             <a
@@ -95,6 +94,7 @@ export default async function SettingsPage() {
           <div id="tags" className="scroll-mt-24">
             <TagsSettings tags={data.tags} />
           </div>
+          <AIProviderSettings />
           <section id="integracoes" className="panel scroll-mt-24 p-5 sm:p-6">
             <h2 className="text-sm font-medium">
               Conexões que ampliam suas possibilidades
@@ -123,14 +123,6 @@ export default async function SettingsPage() {
                   connected: isLeadProviderConfigured(),
                   description:
                     "Descoberta de sites, contatos e análise técnica de páginas públicas.",
-                },
-                {
-                  name: "OpenRouter",
-                  icon: Bot,
-                  connected: openRouter.configured,
-                  description: openRouter.configured
-                    ? `Abordagens comerciais com ${openRouter.model}.`
-                    : "IA para criar abordagens comerciais personalizadas.",
                 },
                 {
                   name: "Email",
@@ -167,8 +159,8 @@ export default async function SettingsPage() {
             </div>
             <p className="mt-5 flex items-center gap-2 text-[10px] text-muted-foreground">
               <ShieldCheck className="size-3.5" />
-              Credenciais são mantidas no servidor. As integrações externas
-              nunca usam chaves administrativas no navegador.
+              Chaves administrativas permanecem no servidor. A chave pessoal de
+              IA fica somente no navegador do próprio usuário.
             </p>
           </section>
         </div>

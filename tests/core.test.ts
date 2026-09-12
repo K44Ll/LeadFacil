@@ -13,6 +13,8 @@ import { deduplicateLeads } from "../lib/leads/utils/deduplication";
 import { outreachRequestSchema } from "../lib/ai/schemas";
 import { buildOutreachPrompt, OUTREACH_SYSTEM_PROMPT } from "../lib/ai/prompt";
 import {
+  extractGeminiMessage,
+  extractOpenAiMessage,
   extractOpenRouterMessage,
   InvalidAiResponseError,
   normalizeGeneratedMessage,
@@ -227,7 +229,10 @@ const validOutreachRequest = {
 } as const;
 
 test("outreach validation accepts the contract and rejects invalid or oversized fields", () => {
-  assert.equal(outreachRequestSchema.safeParse(validOutreachRequest).success, true);
+  assert.equal(
+    outreachRequestSchema.safeParse(validOutreachRequest).success,
+    true,
+  );
   assert.equal(
     outreachRequestSchema.safeParse({
       ...validOutreachRequest,
@@ -274,7 +279,9 @@ test("outreach prompt combines factual lead data, personality, tone and variatio
 
 test("OpenRouter response normalization removes wrappers and rejects empty output", () => {
   assert.equal(
-    normalizeGeneratedMessage('```text\nMensagem: “Oi! Posso te mostrar uma ideia?”\n```'),
+    normalizeGeneratedMessage(
+      "```text\nMensagem: “Oi! Posso te mostrar uma ideia?”\n```",
+    ),
     "Oi! Posso te mostrar uma ideia?",
   );
   assert.throws(
@@ -284,12 +291,88 @@ test("OpenRouter response normalization removes wrappers and rejects empty outpu
       }),
     InvalidAiResponseError,
   );
-  assert.throws(() => extractOpenRouterMessage({ choices: [] }), InvalidAiResponseError);
+  assert.throws(
+    () => extractOpenRouterMessage({ choices: [] }),
+    InvalidAiResponseError,
+  );
+});
+
+test("personal AI configuration accepts supported providers and rejects unsafe models", () => {
+  assert.equal(
+    outreachRequestSchema.safeParse({
+      ...validOutreachRequest,
+      ai: {
+        provider: "ollama",
+        model: "gpt-oss:20b",
+        api_key: "",
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    outreachRequestSchema.safeParse({
+      ...validOutreachRequest,
+      ai: {
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        api_key: "short",
+      },
+    }).success,
+    false,
+  );
+  assert.equal(
+    outreachRequestSchema.safeParse({
+      ...validOutreachRequest,
+      ai: {
+        provider: "openai",
+        model: "gpt-5-mini",
+        api_key: "sk-personal-test-key",
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    outreachRequestSchema.safeParse({
+      ...validOutreachRequest,
+      ai: {
+        provider: "custom",
+        model: "https://internal.example/model",
+        api_key: "test-key",
+      },
+    }).success,
+    false,
+  );
+});
+
+test("provider responses normalize OpenAI and Gemini text", () => {
+  assert.equal(
+    extractOpenAiMessage({
+      model: "gpt-5-mini",
+      output: [{ content: [{ type: "output_text", text: "Mensagem: Olá!" }] }],
+    }).text,
+    "Olá!",
+  );
+  assert.equal(
+    extractGeminiMessage({
+      modelVersion: "gemini-3.7-flash",
+      candidates: [{ content: { parts: [{ text: "Olá!" }] } }],
+    }).text,
+    "Olá!",
+  );
 });
 
 test("OpenRouter errors are mapped to safe user-facing failures", () => {
   assert.equal(getOpenRouterErrorForStatus(429).code, "provider_rate_limit");
   assert.equal(getOpenRouterErrorForStatus(404).code, "model_unavailable");
   assert.equal(getOpenRouterErrorForStatus(500).status, 502);
-  assert.doesNotMatch(getOpenRouterErrorForStatus(500).message, /json|stack|fetch/i);
+  assert.equal(
+    getOpenRouterErrorForStatus(400, {
+      error: { message: "Unsupported parameter: temperature" },
+    }).code,
+    "unsupported_request",
+  );
+  assert.doesNotMatch(
+    getOpenRouterErrorForStatus(500).message,
+    /json|stack|fetch/i,
+  );
 });

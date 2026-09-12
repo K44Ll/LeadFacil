@@ -31,7 +31,6 @@ import {
 import { LeadApproachGenerator } from "@/components/leads/approach/lead-approach-generator";
 import { DeleteLeadButton } from "@/components/leads/delete-leads-dialog";
 import { createOutreachLeadContext } from "@/lib/ai/lead-context";
-import { getOpenRouterStatus } from "@/lib/ai/openrouter";
 export const metadata = { title: "Detalhes do lead" };
 export default async function LeadDetail({
   params,
@@ -41,7 +40,6 @@ export default async function LeadDetail({
   const [{ id }, data] = await Promise.all([params, getWorkspace()]);
   const lead = data.leads.find((l) => l.id === id);
   if (!lead) notFound();
-  const ai = getOpenRouterStatus();
   const outreachLead = createOutreachLeadContext(lead);
   const timeline = data.interactions
     .filter((i) => i.lead_id === id)
@@ -174,11 +172,7 @@ export default async function LeadDetail({
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <LeadApproachGenerator
-            leadId={lead.id}
-            lead={outreachLead}
-            configured={ai.configured}
-          />
+          <LeadApproachGenerator leadId={lead.id} lead={outreachLead} />
           <LeadStatusControl lead={lead} />
           <InteractionForm leadId={lead.id} />
           <DeleteLeadButton lead={lead} />

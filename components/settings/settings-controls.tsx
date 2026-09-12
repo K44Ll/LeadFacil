@@ -1,13 +1,35 @@
 "use client";
 import { useState } from "react";
 import { useTheme } from "next-themes";
-import { Check, Loader2, Plus, Save, Tag as TagIcon } from "lucide-react";
+import {
+  Bot,
+  Check,
+  Eye,
+  EyeOff,
+  Loader2,
+  Plus,
+  Save,
+  ShieldCheck,
+  Tag as TagIcon,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
 import { useMounted, usePreference } from "@/hooks/use-preference";
 import { useMutation } from "@/hooks/use-mutation";
 import { THEMES } from "@/lib/themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import {
+  AI_PROVIDERS,
+  AI_PREFERENCE_KEYS,
+  getAiApiKeyPreferenceKey,
+  getAiModelPreferenceKey,
+  getAiProvider,
+  isAiProviderId,
+  isValidAiModel,
+  type AiProviderId,
+} from "@/lib/ai/providers";
 import type { Profile, Tag } from "@/types/crm";
 export function ProfileSettings({ profile }: { profile: Profile }) {
   const { pending, mutate } = useMutation();
@@ -235,6 +257,196 @@ export function TagsSettings({ tags }: { tags: Tag[] }) {
           Criar tag
         </Button>
       </form>
+    </section>
+  );
+}
+
+export function AIProviderSettings() {
+  const [savedProvider, setSavedProvider] = usePreference(
+    AI_PREFERENCE_KEYS.provider,
+    "openrouter",
+  );
+  const [showKey, setShowKey] = useState(false);
+  const provider: AiProviderId = isAiProviderId(savedProvider)
+    ? savedProvider
+    : "openrouter";
+  const [legacyModel] = usePreference(AI_PREFERENCE_KEYS.legacyModel, "");
+  const [savedModel, setSavedModel] = usePreference(
+    getAiModelPreferenceKey(provider),
+    provider === "openrouter" ? legacyModel : "",
+  );
+  const [legacyApiKey, setLegacyApiKey] = usePreference(
+    AI_PREFERENCE_KEYS.legacyApiKey,
+    "",
+  );
+  const [savedApiKey, setSavedApiKey] = usePreference(
+    getAiApiKeyPreferenceKey(provider),
+    provider === "openrouter" ? legacyApiKey : "",
+  );
+  const providerDetails = getAiProvider(provider);
+  const model = savedModel || providerDetails.defaultModel;
+  const validModel = isValidAiModel(model);
+  const personalConfigured =
+    validModel &&
+    (!providerDetails.requiresApiKey || savedApiKey.trim().length >= 8);
+
+  function selectProvider(nextProvider: AiProviderId) {
+    setSavedProvider(nextProvider);
+  }
+
+  function clear() {
+    setSavedApiKey("");
+    if (provider === "openrouter") setLegacyApiKey("");
+    toast.success("Chave pessoal removida.");
+  }
+
+  return (
+    <section id="ia" className="panel scroll-mt-24 overflow-hidden">
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <Bot className="size-4 text-primary" />
+              Sua própria inteligência artificial
+            </h2>
+            <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+              Escolha o provedor e o modelo. O consumo e a cobrança acontecem
+              diretamente na sua conta do provedor.
+            </p>
+          </div>
+          <span
+            className={`rounded-full border px-2.5 py-1 text-[10px] ${
+              personalConfigured
+                ? "border-success/30 bg-success/8 text-success"
+                : "text-muted-foreground"
+            }`}
+          >
+            {personalConfigured ? "API pessoal configurada" : "Não configurada"}
+          </span>
+        </div>
+
+        <fieldset className="mt-5">
+          <legend className="field-label">Provedor</legend>
+          <div
+            className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+            role="radiogroup"
+          >
+            {AI_PROVIDERS.map((option) => {
+              const selected = provider === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => selectProvider(option.id)}
+                  className={`cursor-pointer rounded-xl border p-3 text-left transition-colors ${
+                    selected
+                      ? "border-primary bg-primary/8 ring-1 ring-primary/20"
+                      : "hover:border-muted-foreground/50 hover:bg-muted/40"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-xs font-medium">
+                    <span
+                      className={`size-2 rounded-full ${selected ? "bg-primary" : "bg-muted-foreground/40"}`}
+                    />
+                    {option.name}
+                  </span>
+                  <span className="mt-1.5 block text-[10px] leading-4 text-muted-foreground">
+                    {option.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label>
+            <span className="field-label">Modelo</span>
+            <Input
+              list={`models-${provider}`}
+              value={model}
+              onChange={(event) =>
+                setSavedModel(event.target.value.slice(0, 160))
+              }
+              placeholder={providerDetails.defaultModel}
+              autoComplete="off"
+              aria-invalid={Boolean(model) && !validModel}
+            />
+            <datalist id={`models-${provider}`}>
+              {providerDetails.modelSuggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+            <span className="mt-1.5 block text-[10px] text-muted-foreground">
+              {model && !validModel
+                ? "Use somente letras, números, ponto, hífen, barra, dois-pontos, sublinhado ou til."
+                : "Escolha uma sugestão ou informe outro identificador disponível na sua conta."}
+            </span>
+          </label>
+          {providerDetails.requiresApiKey ? (
+            <label>
+              <span className="field-label">{providerDetails.keyLabel}</span>
+              <span className="relative block">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  value={savedApiKey}
+                  onChange={(event) => {
+                    if (!savedModel)
+                      setSavedModel(providerDetails.defaultModel);
+                    setSavedApiKey(event.target.value.slice(0, 1_024));
+                  }}
+                  placeholder={providerDetails.keyPlaceholder}
+                  autoComplete="off"
+                  className="pr-9 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((current) => !current)}
+                  aria-label={showKey ? "Ocultar chave" : "Mostrar chave"}
+                  className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {showKey ? (
+                    <EyeOff className="size-3.5" />
+                  ) : (
+                    <Eye className="size-3.5" />
+                  )}
+                </button>
+              </span>
+              <span className="mt-1.5 block text-[10px] text-muted-foreground">
+                A chave não é salva no banco nem incluída no código do site.
+              </span>
+            </label>
+          ) : (
+            <div className="rounded-lg border bg-muted/30 p-3 text-[10px] leading-5 text-muted-foreground">
+              <span className="block font-medium text-foreground">
+                Sem chave de API
+              </span>
+              Inicie o Ollama neste computador. Ele será acessado em
+              http://127.0.0.1:11434 e não funciona a partir do deploy da
+              Vercel.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 border-t bg-muted/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <p className="flex max-w-xl items-start gap-2 text-[10px] leading-4 text-muted-foreground">
+          <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
+          As alterações são salvas automaticamente neste navegador. A chave só é
+          enviada ao backend durante a geração; em um computador compartilhado,
+          remova-a ao terminar.
+        </p>
+        <div className="flex shrink-0 gap-2">
+          {providerDetails.requiresApiKey && savedApiKey && (
+            <Button type="button" variant="ghost" onClick={clear}>
+              <Trash2 />
+              Remover
+            </Button>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

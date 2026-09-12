@@ -1,11 +1,13 @@
 import { websiteAnalysisSchema, unavailableAnalysis } from "@/lib/analyzers";
 import { createOutreachLeadContext } from "@/lib/ai/lead-context";
-import { generateOutreach, OpenRouterError } from "@/lib/ai/openrouter";
+import { AiProviderError, generateOutreach } from "@/lib/ai/gateway";
 import { consumeOutreachRateLimit } from "@/lib/ai/rate-limit";
 import { outreachRequestSchema } from "@/lib/ai/schemas";
 import { getApiContext } from "@/lib/data/repository";
 
 const responseHeaders = { "Cache-Control": "no-store" };
+
+export const maxDuration = 200;
 
 export async function POST(request: Request) {
   const context = await getApiContext();
@@ -24,7 +26,9 @@ export async function POST(request: Request) {
         error:
           parsed.error.issues[0]?.path[0] === "offered_service"
             ? "Informe o serviço que você oferece."
-            : "Revise as opções da abordagem e tente novamente.",
+            : parsed.error.issues[0]?.path[0] === "ai"
+              ? "Revise o provedor, o modelo e a chave da sua API."
+              : "Revise as opções da abordagem e tente novamente.",
       },
       { status: 400, headers: responseHeaders },
     );
@@ -70,8 +74,8 @@ export async function POST(request: Request) {
     const result = await generateOutreach(leadContext, parsed.data);
     return Response.json(result, { headers: responseHeaders });
   } catch (error) {
-    if (error instanceof OpenRouterError) {
-      console.error("OpenRouter outreach failed", {
+    if (error instanceof AiProviderError) {
+      console.error("AI outreach failed", {
         code: error.code,
         status: error.status,
       });

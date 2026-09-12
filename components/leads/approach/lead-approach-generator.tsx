@@ -31,18 +31,28 @@ import {
   type PersonalityId,
   type ToneId,
 } from "@/lib/ai/outreach-options";
+import {
+  getAiProvider,
+  getAiApiKeyPreferenceKey,
+  getAiModelPreferenceKey,
+  AI_PREFERENCE_KEYS,
+  isAiProviderId,
+  isValidAiModel,
+  type AiProviderId,
+} from "@/lib/ai/providers";
 import { GeneratedApproach } from "./generated-approach";
 import { LeadSummary } from "./lead-summary";
 import { PersonalitySelector, ToneSelector } from "./option-selectors";
 
 type GeneratorState =
-  | "initial"
-  | "configuring"
-  | "generating"
-  | "success"
-  | "error";
+  "initial" | "configuring" | "generating" | "success" | "error";
 
-type ApiResponse = { text?: string; model?: string; error?: string };
+type ApiResponse = {
+  text?: string;
+  model?: string;
+  provider?: AiProviderId;
+  error?: string;
+};
 
 function isApiResponse(value: unknown): value is ApiResponse {
   return typeof value === "object" && value !== null;
@@ -51,11 +61,9 @@ function isApiResponse(value: unknown): value is ApiResponse {
 export function LeadApproachGenerator({
   leadId,
   lead,
-  configured,
 }: {
   leadId: string;
   lead: OutreachLeadContext;
-  configured: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<GeneratorState>("initial");
@@ -80,6 +88,10 @@ export function LeadApproachGenerator({
     "outreach-length",
     DEFAULT_OUTREACH_PREFERENCES.length,
   );
+  const [aiProviderValue] = usePreference(
+    AI_PREFERENCE_KEYS.provider,
+    "openrouter",
+  );
   const requestSequence = useRef(0);
   const requestInFlight = useRef(false);
   const controller = useRef<AbortController | null>(null);
@@ -93,6 +105,31 @@ export function LeadApproachGenerator({
   const length: ApproachLengthId = isApproachLengthId(lengthValue)
     ? lengthValue
     : DEFAULT_OUTREACH_PREFERENCES.length;
+  const aiProvider: AiProviderId = isAiProviderId(aiProviderValue)
+    ? aiProviderValue
+    : "openrouter";
+  const [legacyAiModel] = usePreference(AI_PREFERENCE_KEYS.legacyModel, "");
+  const [aiModel] = usePreference(
+    getAiModelPreferenceKey(aiProvider),
+    (aiProvider === "openrouter" ? legacyAiModel : "") ||
+      getAiProvider(aiProvider).defaultModel,
+  );
+  const [legacyAiApiKey] = usePreference(AI_PREFERENCE_KEYS.legacyApiKey, "");
+  const [aiApiKey] = usePreference(
+    getAiApiKeyPreferenceKey(aiProvider),
+    aiProvider === "openrouter" ? legacyAiApiKey : "",
+  );
+  const aiProviderDetails = getAiProvider(aiProvider);
+  const personalAi =
+    isValidAiModel(aiModel) &&
+    (!aiProviderDetails.requiresApiKey || aiApiKey.trim().length >= 8)
+      ? {
+          provider: aiProvider,
+          model: aiModel.trim(),
+          api_key: aiProviderDetails.requiresApiKey ? aiApiKey.trim() : "",
+        }
+      : undefined;
+  const configured = Boolean(personalAi);
   const canGenerate = configured && offeredService.trim().length >= 2;
 
   function handleOpenChange(nextOpen: boolean) {
@@ -130,6 +167,7 @@ export function LeadApproachGenerator({
           tone,
           length,
           previous_message: variation && result ? result : undefined,
+          ai: personalAi,
         }),
         signal: abortController.signal,
       });
@@ -182,7 +220,8 @@ export function LeadApproachGenerator({
             Chegador na Empresa
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Uma mensagem curta e personalizada para abrir conversa com {lead.name}.
+            Uma mensagem curta e personalizada para abrir conversa com{" "}
+            {lead.name}.
           </DialogDescription>
         </DialogHeader>
 
@@ -204,7 +243,8 @@ export function LeadApproachGenerator({
                   Criando uma abordagem para {lead.name}...
                 </h3>
                 <p className="mt-2 max-w-sm text-xs leading-5 text-muted-foreground">
-                  Combinando os dados disponíveis com seu serviço, personalidade e tom.
+                  Combinando os dados disponíveis com seu serviço, personalidade
+                  e tom.
                 </p>
               </div>
             ) : state === "success" ? (
@@ -227,7 +267,14 @@ export function LeadApproachGenerator({
                   <div className="flex gap-3 rounded-lg border border-warning/30 bg-warning/8 p-3 text-[11px] leading-5">
                     <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" />
                     <p>
-                      A IA ainda não foi configurada. Adicione a chave do OpenRouter no ambiente do servidor para gerar mensagens.
+                      A IA ainda não foi configurada. Conecte sua própria API em{" "}
+                      <a
+                        href="/configuracoes#ia"
+                        className="font-medium underline underline-offset-2"
+                      >
+                        Configurações
+                      </a>{" "}
+                      para gerar mensagens.
                     </p>
                   </div>
                 )}
@@ -236,7 +283,9 @@ export function LeadApproachGenerator({
                   <span className="field-label">Serviço que você oferece</span>
                   <Input
                     value={offeredService}
-                    onChange={(event) => setOfferedService(event.target.value.slice(0, 240))}
+                    onChange={(event) =>
+                      setOfferedService(event.target.value.slice(0, 240))
+                    }
                     placeholder="Ex.: criação de sites para academias"
                     minLength={2}
                     maxLength={240}
@@ -274,7 +323,9 @@ export function LeadApproachGenerator({
                             : "hover:bg-muted/50"
                         }`}
                       >
-                        <span className="block text-[11px] font-medium">{option.name}</span>
+                        <span className="block text-[11px] font-medium">
+                          {option.name}
+                        </span>
                         <span className="mt-0.5 block text-[9px] text-muted-foreground">
                           {option.description}
                         </span>
@@ -291,12 +342,18 @@ export function LeadApproachGenerator({
                     className="flex w-full items-center justify-between gap-3 p-3 text-left"
                   >
                     <span>
-                      <span className="block text-xs font-medium">Adicionar contexto</span>
+                      <span className="block text-xs font-medium">
+                        Adicionar contexto
+                      </span>
                       <span className="mt-1 block text-[10px] text-muted-foreground">
                         Opcional: conte o que você observou ou quer oferecer.
                       </span>
                     </span>
-                    {contextOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                    {contextOpen ? (
+                      <ChevronUp className="size-4" />
+                    ) : (
+                      <ChevronDown className="size-4" />
+                    )}
                   </button>
                   {contextOpen && (
                     <div className="border-t p-3">
@@ -306,7 +363,9 @@ export function LeadApproachGenerator({
                       <Textarea
                         id="outreach-context"
                         value={userContext}
-                        onChange={(event) => setUserContext(event.target.value.slice(0, 1_500))}
+                        onChange={(event) =>
+                          setUserContext(event.target.value.slice(0, 1_500))
+                        }
                         placeholder="Ex.: O Instagram é movimentado, mas o site está desatualizado. Quero oferecer um site novo por R$ 900."
                         className="min-h-28 text-xs leading-5"
                         maxLength={1_500}
@@ -319,7 +378,10 @@ export function LeadApproachGenerator({
                 </div>
 
                 {state === "error" && (
-                  <div className="flex gap-2 rounded-lg border border-destructive/25 bg-destructive/8 p-3 text-[11px] text-destructive" role="alert">
+                  <div
+                    className="flex gap-2 rounded-lg border border-destructive/25 bg-destructive/8 p-3 text-[11px] text-destructive"
+                    role="alert"
+                  >
                     <AlertCircle className="mt-0.5 size-4 shrink-0" />
                     <p>{error}</p>
                   </div>
@@ -327,9 +389,17 @@ export function LeadApproachGenerator({
 
                 <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-[9px] leading-4 text-muted-foreground">
-                    A IA recebe somente os dados exibidos e suas preferências.
+                    {personalAi
+                      ? aiProviderDetails.requiresApiKey
+                        ? `${aiProviderDetails.name} · ${personalAi.model}. A chave pessoal é usada somente nesta solicitação.`
+                        : `${aiProviderDetails.name} · ${personalAi.model}. O modelo roda neste computador.`
+                      : "A IA recebe somente os dados exibidos e suas preferências."}
                   </p>
-                  <Button type="submit" className="primary-cta" disabled={!canGenerate}>
+                  <Button
+                    type="submit"
+                    className="primary-cta"
+                    disabled={!canGenerate}
+                  >
                     <Sparkles />
                     Gerar agora
                   </Button>

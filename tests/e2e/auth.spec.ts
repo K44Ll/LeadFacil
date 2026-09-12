@@ -158,6 +158,50 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
     await expect(
       page.getByRole("button", { name: "Buscar leads", exact: true }),
     ).toBeEnabled();
+    await page.goto("/configuracoes#ia");
+    await expect(page.getByRole("radio", { name: /Groq/ })).toBeVisible();
+    await expect(page.getByRole("radio", { name: /Ollama local/ })).toBeVisible();
+    await page.getByRole("radio", { name: /^OpenAI\b/ }).click();
+    await page.getByRole("combobox", { name: /Modelo/ }).fill("gpt-5-mini");
+    await page
+      .getByLabel("Chave da API da OpenAI")
+      .fill("sk-chave-pessoal-de-teste");
+    await expect(page.getByText("API pessoal configurada")).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("radio", { name: /^OpenAI\b/ }),
+    ).toBeChecked();
+    await expect(page.getByRole("combobox", { name: /Modelo/ })).toHaveValue(
+      "gpt-5-mini",
+    );
+    await expect(page.getByLabel("Chave da API da OpenAI")).toHaveValue(
+      "sk-chave-pessoal-de-teste",
+    );
+    await page.getByRole("radio", { name: /Groq/ }).click();
+    await expect(page.getByRole("combobox", { name: /Modelo/ })).toHaveValue(
+      "llama-3.3-70b-versatile",
+    );
+    await page
+      .getByLabel("Chave da API da Groq")
+      .fill("gsk-chave-pessoal-de-teste");
+    await page.getByRole("radio", { name: /Ollama local/ }).click();
+    await expect(page.getByText("Sem chave de API")).toBeVisible();
+    await expect(page.getByText("API pessoal configurada")).toBeVisible();
+    await page.getByRole("radio", { name: /^OpenAI\b/ }).click();
+    await expect(page.getByLabel("Chave da API da OpenAI")).toHaveValue(
+      "sk-chave-pessoal-de-teste",
+    );
+    const aiSettingsAccessibility = await new AxeBuilder({ page })
+      .include("#ia")
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    expect(
+      aiSettingsAccessibility.violations.filter(
+        (violation) =>
+          violation.impact === "critical" || violation.impact === "serious",
+      ),
+      JSON.stringify(aiSettingsAccessibility.violations),
+    ).toEqual([]);
     const leadId = randomUUID();
     await db.query(
       "insert into public.leads(id,user_id,company_name,category,description,city,state,phone,whatsapp,website,domain,instagram,google_rating,review_count,source,source_id,notes) values($1,$2,'Academia StrongFit','Academia','Academia local com presença digital ativa.','Teresópolis','RJ','+552122223333','+5521999998888','https://strongfit.example','strongfit.example','https://instagram.com/strongfit',4.8,127,'e2e','strongfit','Contato interessado em crescimento digital.')",
@@ -185,9 +229,7 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
       });
     });
     await page.goto(`/leads/${leadId}`);
-    await page
-      .getByRole("button", { name: "Gerar abordagem com IA" })
-      .click();
+    await page.getByRole("button", { name: "Gerar abordagem com IA" }).click();
     await expect(
       page.getByRole("heading", { name: "Chegador na Empresa" }),
     ).toBeVisible();
@@ -230,13 +272,20 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
       personality: "specialist",
       tone: "friendly",
       length: "short",
+      ai: {
+        provider: "openai",
+        model: "gpt-5-mini",
+        api_key: "sk-chave-pessoal-de-teste",
+      },
     });
     await page.getByRole("button", { name: "Editar" }).click();
     await page
       .getByRole("textbox", { name: "Editar abordagem gerada" })
       .fill("Mensagem ajustada manualmente.");
     await page.getByRole("button", { name: "Concluir" }).click();
-    await expect(page.getByText("Mensagem ajustada manualmente.")).toBeVisible();
+    await expect(
+      page.getByText("Mensagem ajustada manualmente."),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Gerar novamente" }).click();
     await expect(
       page.getByText("A StrongFit já conversa com bastante gente online."),
@@ -302,6 +351,11 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
       .fill("Prospectar");
     await page.getByRole("button", { name: "Criar tag", exact: true }).click();
     await expect(page.getByText("Prospectar", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Remover" }).click();
+    await expect(
+      page.getByText("Não configurada", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Chave da API da OpenAI")).toHaveValue("");
     for (const [name, id] of [
       ["Light", "light"],
       ["Dark", "dark"],
@@ -327,6 +381,7 @@ test("real Supabase login, empty workspace, persisted profile/lists/tags, themes
         ),
       ).toEqual([]);
     }
+    await page.evaluate(() => document.dispatchEvent(new Event("keydown")));
     await page.keyboard.press("Control+k");
     await expect(page.getByRole("dialog")).toBeVisible();
     await page

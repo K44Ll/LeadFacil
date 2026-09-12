@@ -1,7 +1,11 @@
-import { openRouterResponseSchema } from "./schemas";
+import {
+  geminiResponseSchema,
+  openAiResponseSchema,
+  openRouterResponseSchema,
+} from "./schemas";
 
 export class InvalidAiResponseError extends Error {
-  constructor(message = "O OpenRouter retornou uma resposta inválida.") {
+  constructor(message = "O provedor de IA retornou uma resposta inválida.") {
     super(message);
     this.name = "InvalidAiResponseError";
   }
@@ -37,7 +41,7 @@ export function normalizeGeneratedMessage(value: string) {
     throw new InvalidAiResponseError(
       normalized
         ? "A resposta gerada ficou fora do tamanho esperado."
-        : "O OpenRouter retornou uma resposta vazia.",
+        : "O provedor de IA retornou uma resposta vazia.",
     );
   }
   return normalized;
@@ -49,5 +53,33 @@ export function extractOpenRouterMessage(payload: unknown) {
   return {
     text: normalizeGeneratedMessage(parsed.data.choices[0].message.content),
     model: parsed.data.model,
+  };
+}
+
+export function extractOpenAiMessage(payload: unknown) {
+  const parsed = openAiResponseSchema.safeParse(payload);
+  if (!parsed.success) throw new InvalidAiResponseError();
+  const nestedText = parsed.data.output
+    ?.flatMap((item) => item.content || [])
+    .filter((item) => item.type === "output_text")
+    .map((item) => item.text || "")
+    .join("\n");
+  return {
+    text: normalizeGeneratedMessage(
+      parsed.data.output_text || nestedText || "",
+    ),
+    model: parsed.data.model,
+  };
+}
+
+export function extractGeminiMessage(payload: unknown) {
+  const parsed = geminiResponseSchema.safeParse(payload);
+  if (!parsed.success) throw new InvalidAiResponseError();
+  const text = parsed.data.candidates[0].content.parts
+    .map((part) => part.text || "")
+    .join("\n");
+  return {
+    text: normalizeGeneratedMessage(text),
+    model: parsed.data.modelVersion,
   };
 }
